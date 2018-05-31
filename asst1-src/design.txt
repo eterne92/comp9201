@@ -1,0 +1,51 @@
+Part 1:
+
+problem: racing condition on variable counter between threads. Counter
+might been changed after increment and  before it is assigned to local
+variable b.
+
+solution: add a lock to criticle section.
+
+Part 2:
+
+problem: two threads both using locka and lockb, but acquiring them with
+in differen orders. This may cause that thread ben holding lockb acquiring
+locka while thread bill holding locka acquiring lockb, thus a deadlock.
+
+solution: let ben acquiring locks in the same order as bill.
+
+Part3:
+
+Consumer and producer sharing a buffer holding data. Receiving data
+from buffer, and putting data into buffer  form criticle section. It's
+a typical producer-consumer problem, so we need a primitive to put each
+thread into a waiting list while the buffer in certain status.
+
+Solution: A lock to lock up criticle sections and two conditional variable
+to control threads. While buffer is full put the producer thread into
+sleep and wake it up when buffer is not full. While buffer is empty put
+the consumer into sleep and wake it up when buffer is not empty.
+
+Part 4:
+
+Barorders are put into a order list, which will be shared between
+customers(put orders in) and servers(take order). A typical
+producer-consumer problem, but as the bar needs to keep people dying
+from dehydrated, a FIFO data structure need to be used for the orderlist,
+so the first order made always got taken first.  Also each order should
+be provide with a semaphore that wakes it up when the orders done. This
+semaphore will be given when an order is made. It will put the order
+into sleep after the order is inside the list then wait to be wake up
+when a server_order function is called. But as the os161 got some mem
+leak issue. A certain amount of semaphores are allocated rather than
+allocate them when an order is made. So there is synch issue with the
+semaphore list too.  We create a lock to lock it up. The semaphores are
+returned to the list after used. We assumed that the bar won't close
+before all custom order been served.  Otherwise there might be some
+problem destorying the semaphores.
+
+Bottles are also been shared between bartender threads. We use a series
+locks to lock them. These locks should been acquired in a specific order,
+for example Bottle1 should always been acquired before Bottle2, to avoid
+deadlock situation. We use a checktable to recognize all the locks needed
+for each bartender, then lock them up one by one.

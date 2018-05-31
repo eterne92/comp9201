@@ -1,0 +1,101 @@
+Base Assignment:
+
+We used several structs to control syscalls related to files.
+
+A struct file is a wrap of vnode, which contains a vnode related to the
+file, a opencount counts how many times this vnode is used, its open
+flags and current pos.
+
+A struct globalfd is a global oepnfile table, which contains an array
+of files opened, and a lock to prevent race condition. We set the array
+size to a constant value GOPEN_MAX=128, which is pretty small.
+
+A struct filetable is a filetable per process. Which only contains a
+array of integer point to globalfd's oepnfile array with constant size
+of OPEN_MAX. Since we assume there is only one thread inside the process,
+only process itself can see this filetable, so no need for any locks here.
+
+Global filetable is init when system boot up, with all NULL pointer
+inside. And a process level filetable is create when process is
+created. But it won't attach to console until runprogram or execv is
+called. Since we might want to copy other process's filetable when fork
+is called.
+
+file syscalls may cause race condition when several processes all try
+to reach global filetable, or several processes owns same struct file
+pointer, then try to operate this struct. For global filetable we used a
+lock, each time a process wants to reach the global filetable, this lock
+is used to check whether others is using the global filetable. For each
+struct file, a lock is used everytime a syscall changeds the file status.
+
+sys_open: create a new file struct each time and insert it into global
+filetable, then set the process level filetable point to the global
+filetable. User level char got copyed into kernel in case of a unsafe
+pointer is provide.
+
+sys_write: first copy userlevel buffer into kernel level, to prevent a
+unsafe pointer. When write into file, we should make sure nobody touch's
+the file during init the uio, as the position might changed between
+these operations.
+
+sys_read: first read data into kernel buffer then copy it out. Same race
+condition as the sys_write.
+
+sys_dup2: dup2 doesn't open new files it just increase the opencount of
+filestruct and refcount of the vnode then set process level filetable
+point to the same file struct.
+
+sys_close: a more generalized filehandle close funtion _sys_close is used
+in advanced assignment to close other process's filehandle, as when we
+destroy a process, we need to close all the files that it opened. For
+sys_close syscall, we decrese the vnode's refcount and file struct's
+opencount. Only when the opencount is 1 we destroy the file. ans when
+vnode's refcount is 1, we cleanup the vnode.
+
+sys_lseek: when set up the position, we need to lock up the file, since
+this operation might have race condition with read or write and end up
+with unexpected result.
+
+ADV part:
+
+struct proc_control and struct pctable is introduced to save process
+conditions.
+
+proc_control saves pid, parent pid. And it track all its children in a
+bitmap. It also got a semaphore to keep it's parent in wait chanel. After
+a process is exited, it's exitstatus and exitcode is saved in this
+structure.
+
+pctable is global process control table, stores all the process in
+control. And uses a lock to prevent racing between each process.
+
+sys_fork: create a new proc with copys of the parent addrspace, filetable
+and other stuffs. Then fork a thread into this proc. We set the thread
+to point to enter_forked_proc, so we can set the trapframe then get back
+to usermode. Pid is allocated and process control info is set before
+fork thread. We keep runprogram's process pid 1 so the user's pid starts
+from 2.
+
+sys_getpid: just return the pid that is set in the proc when we fork
+the proc.
+
+more about pid system: we keep pid system simple, every time allocating
+we just insert the pc struct into the smallest null slot then return
+the slot number as its pid. When deallocate, we fetch that struct out
+destroy it then set the slot to null. Allocating and deallocating may
+cause race condition, a lock is used each time we get process control
+struct from the global pctable.
+
+sys_waitpid: Only the parent of a child process can waitpid on the
+child. So the system is quite simple. We just check the child status
+then wait for it to exit. After it's exit, we collect the exitcode,
+destroy the child then return.
+
+sys__exit: When exit a process, we first check whether it has children or
+not. If it has any children just set the process pid 1(which in our case
+the runprogram proc)'s. So that if we want to, we can still collect and
+destroy them. But as waitpid don't accept pid less then 2, there might
+need another way to do it, which is not implemented here. After set the
+children we wake up it's parent then exit the thread.
+
+sys_execv: not done yet.

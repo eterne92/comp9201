@@ -1,0 +1,6 @@
+/build
+/defs.mk
+/kern/compile
+/.directory
+/.code
+/.vscode
